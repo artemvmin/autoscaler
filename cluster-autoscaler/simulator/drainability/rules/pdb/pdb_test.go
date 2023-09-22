@@ -14,13 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package drainability
+package pdb
 
 import (
 	"testing"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/autoscaler/cluster-autoscaler/simulator/drainability"
 	"k8s.io/kubernetes/pkg/kubelet/types"
 )
 
@@ -28,7 +29,7 @@ func TestMirrorPodRule(t *testing.T) {
 	testCases := []struct {
 		desc string
 		pod  *apiv1.Pod
-		want Status
+		want drainability.Status
 	}{
 		{
 			desc: "non mirror pod",
@@ -38,7 +39,7 @@ func TestMirrorPodRule(t *testing.T) {
 					Namespace: "ns",
 				},
 			},
-			want: NewUndefinedStatus(),
+			want: drainability.NewUndefinedStatus(),
 		},
 		{
 			desc: "mirror pod",
@@ -51,12 +52,12 @@ func TestMirrorPodRule(t *testing.T) {
 					},
 				},
 			},
-			want: NewSkipStatus(),
+			want: drainability.NewSkipStatus(),
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			m := NewMirrorPodRule()
+			m := New()
 			got := m.Drainable(tc.pod)
 			if tc.want != got {
 				t.Errorf("MirrorPodRule.Drainable(%v) = %v, want %v", tc.pod.Name, got, tc.want)

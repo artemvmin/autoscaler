@@ -17,15 +17,14 @@ limitations under the License.
 package simulator
 
 import (
-	"fmt"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/autoscaler/cluster-autoscaler/config"
 	"k8s.io/autoscaler/cluster-autoscaler/simulator/drainability"
+	"k8s.io/autoscaler/cluster-autoscaler/simulator/drainability/context"
+	"k8s.io/autoscaler/cluster-autoscaler/simulator/drainability/rules"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/drain"
 	kube_util "k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
 	pod_util "k8s.io/autoscaler/cluster-autoscaler/utils/pod"
@@ -44,7 +43,7 @@ type NodeDeleteOptions struct {
 	// to allow their pods deletion in scale down
 	MinReplicaCount int
 	// DrainabilityRules contain a list of checks that are used to verify whether a pod can be drained from node.
-	DrainabilityRules []drainability.Rule
+	DrainabilityRules []rules.Rule
 }
 
 // NewNodeDeleteOptions returns new node delete options extracted from autoscaling options
@@ -54,7 +53,7 @@ func NewNodeDeleteOptions(opts config.AutoscalingOptions) NodeDeleteOptions {
 		SkipNodesWithLocalStorage:         opts.SkipNodesWithLocalStorage,
 		MinReplicaCount:                   opts.MinReplicaCount,
 		SkipNodesWithCustomControllerPods: opts.SkipNodesWithCustomControllerPods,
-		DrainabilityRules:                 drainability.DefaultRules(),
+		DrainabilityRules:                 rules.Default(),
 	}
 }
 
@@ -71,11 +70,14 @@ func GetPodsToMove(nodeInfo *schedulerframework.NodeInfo, deleteOptions NodeDele
 	var drainPods, drainDs []*apiv1.Pod
 	drainabilityRules := deleteOptions.DrainabilityRules
 	if drainabilityRules == nil {
-		drainabilityRules = drainability.DefaultRules()
+		drainabilityRules = rules.Default()
+	}
+	drainCtx := &context.DrainContext{
+		Pdbs: pdbs,
 	}
 	for _, podInfo := range nodeInfo.Pods {
 		pod := podInfo.Pod
-		d := drainabilityStatus(pod, drainabilityRules)
+		d := drainabilityStatus(drainCtx, pod, drainabilityRules)
 		switch d.Outcome {
 		case drainability.UndefinedOutcome:
 			pods = append(pods, podInfo.Pod)
@@ -86,12 +88,19 @@ func GetPodsToMove(nodeInfo *schedulerframework.NodeInfo, deleteOptions NodeDele
 				drainPods = append(drainPods, pod)
 			}
 		case drainability.BlockDrain:
-			blockingPod = &drain.BlockingPod{pod, d.BlockingReason}
+			// TODO(reviewer note): can we blame the pod, even though pdb call failed?
+			// What is the consequence of returning a pod here?
+			// Alternatively, drainability would have to pass a value to indicate pod
+			// vs infrastructure error.
+			blockingPod = &drain.BlockingPod{
+				Pod:    pod,
+				Reason: d.BlockingReason,
+			}
 			err = d.Error
 			return
-		case drainability.SkipDrain:
 		}
 	}
+
 	pods, daemonSetPods, blockingPod, err = drain.GetPodsForDeletionOnNodeDrain(
 		pods,
 		pdbs,
@@ -106,39 +115,15 @@ func GetPodsToMove(nodeInfo *schedulerframework.NodeInfo, deleteOptions NodeDele
 	if err != nil {
 		return pods, daemonSetPods, blockingPod, err
 	}
-	if pdbBlockingPod, err := checkPdbs(pods, pdbs); err != nil {
-		return []*apiv1.Pod{}, []*apiv1.Pod{}, pdbBlockingPod, err
-	}
 
 	return pods, daemonSetPods, nil, nil
 }
 
-func checkPdbs(pods []*apiv1.Pod, pdbs []*policyv1.PodDisruptionBudget) (*drain.BlockingPod, error) {
-	// TODO: remove it after deprecating legacy scale down.
-	// RemainingPdbTracker.CanRemovePods() to replace this function.
-	for _, pdb := range pdbs {
-		selector, err := metav1.LabelSelectorAsSelector(pdb.Spec.Selector)
-		if err != nil {
-			return nil, err
-		}
-		for _, pod := range pods {
-			if pod.Namespace == pdb.Namespace && selector.Matches(labels.Set(pod.Labels)) {
-				if pdb.Status.DisruptionsAllowed < 1 {
-					return &drain.BlockingPod{Pod: pod, Reason: drain.NotEnoughPdb}, fmt.Errorf("not enough pod disruption budget to move %s/%s", pod.Namespace, pod.Name)
-				}
-			}
-		}
-	}
-	return nil, nil
-}
-
-func drainabilityStatus(pod *apiv1.Pod, dr []drainability.Rule) drainability.Status {
-	for _, f := range dr {
-		if d := f.Drainable(pod); d.Outcome != drainability.UndefinedOutcome {
+func drainabilityStatus(drainCtx *context.DrainContext, pod *apiv1.Pod, rules []rules.Rule) drainability.Status {
+	for _, r := range rules {
+		if d := r.Drainable(drainCtx, pod); d.Outcome != drainability.UndefinedOutcome {
 			return d
 		}
 	}
-	return drainability.Status{
-		Outcome: drainability.UndefinedOutcome,
-	}
+	return drainability.NewUndefinedStatus()
 }
