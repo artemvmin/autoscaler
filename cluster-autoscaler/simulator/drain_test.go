@@ -25,6 +25,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/autoscaler/cluster-autoscaler/core/scaledown/pdb"
 	"k8s.io/autoscaler/cluster-autoscaler/simulator/drainability"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/drain"
 	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
@@ -311,7 +312,9 @@ func TestGetPodsToMove(t *testing.T) {
 				SkipNodesWithCustomControllerPods: true,
 				DrainabilityRules:                 tc.rules,
 			}
-			p, d, b, err := GetPodsToMove(schedulerframework.NewNodeInfo(tc.pods...), deleteOptions, nil, tc.pdbs, testTime)
+			tracker := pdb.NewBasicRemainingPdbTracker()
+			tracker.SetPdbs(tc.pdbs)
+			p, d, b, err := GetPodsToMove(schedulerframework.NewNodeInfo(tc.pods...), deleteOptions, nil, tracker, testTime)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {

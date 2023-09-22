@@ -17,9 +17,8 @@ limitations under the License.
 package drainability
 
 import (
-	"k8s.io/autoscaler/cluster-autoscaler/utils/pod"
-
 	apiv1 "k8s.io/api/core/v1"
+	pod_util "k8s.io/autoscaler/cluster-autoscaler/utils/pod"
 )
 
 // MirrorPodRule is a drainability rule on how to handle mirror pods.
@@ -31,8 +30,8 @@ func NewMirrorPodRule() *MirrorPodRule {
 }
 
 // Drainable decides what to do with mirror pods on node drain.
-func (m *MirrorPodRule) Drainable(p *apiv1.Pod) Status {
-	if pod.IsMirrorPod(p) {
+func (MirrorPodRule) Drainable(pod *apiv1.Pod) Status {
+	if pod_util.IsMirrorPod(pod) {
 		return NewSkipStatus()
 	}
 	return NewUndefinedStatus()

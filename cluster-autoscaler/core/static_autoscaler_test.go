@@ -150,7 +150,7 @@ func (m *onNodeGroupDeleteMock) Delete(id string) error {
 }
 
 func setUpScaleDownActuator(ctx *context.AutoscalingContext, options config.AutoscalingOptions) {
-	deleteOptions := simulator.NewNodeDeleteOptions(options)
+	deleteOptions := simulator.NewNodeDeleteOptions(options, ctx.RemainingPdbTracker)
 	ctx.ScaleDownActuator = actuation.NewActuator(ctx, nil, deletiontracker.NewNodeDeletionTracker(0*time.Second), deleteOptions, NewTestProcessors(ctx).NodeGroupConfigProcessor)
 }
 
@@ -352,8 +352,8 @@ func TestStaticAutoscalerRunOnceWithAutoprovisionedEnabled(t *testing.T) {
 	onScaleDownMock := &onScaleDownMock{}
 	onNodeGroupCreateMock := &onNodeGroupCreateMock{}
 	onNodeGroupDeleteMock := &onNodeGroupDeleteMock{}
-	nodeGroupManager := &MockAutoprovisioningNodeGroupManager{t, 0}
-	nodeGroupListProcessor := &MockAutoprovisioningNodeGroupListProcessor{t}
+	nodeGroupManager := &MockAutoprovisioningNodeGroupManager{T: t}
+	nodeGroupListProcessor := &MockAutoprovisioningNodeGroupListProcessor{T: t}
 	deleteFinished := make(chan bool, 1)
 
 	n1 := BuildTestNode("n1", 100, 1000)

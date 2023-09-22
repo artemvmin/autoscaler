@@ -1295,6 +1295,6 @@ func newWrapperForTesting(ctx *context.AutoscalingContext, clusterStateRegistry 
 	}
 	processors := NewTestProcessors(ctx)
 	sd := NewScaleDown(ctx, processors, ndt, deleteOptions)
-	actuator := actuation.NewActuator(ctx, clusterStateRegistry, ndt, deleteOptions, processors.NodeGroupConfigProcessor)
+	actuator := actuation.NewActuator(ctx, clusterStateRegistry, ndt, deleteOptions, processors.NodeGroupConfigProcessor, ctx.RemainingPdbTracker)
 	return NewScaleDownWrapper(sd, actuator)
 }
